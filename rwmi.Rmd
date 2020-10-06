@@ -1,0 +1,128 @@
+---
+title: "Robins & Wang multiple imputation variance"
+author: "Thomas Lumley"
+date: "05/08/2020"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Robins & Wang (1999) derived an asymptotic variance formula for multiple imputation estimators without the assumption that the imputation model was congenial to (or even consistent with) the analysis model.  The write *"The price we pay for the better performance of our variance estimator is a slight increase in computational complexity. However, with small modifications to existing complete data software, we show that this increased computational burden can be made invisible to the user."*  So far, this has not turned out to be the case. 
+
+Variance estimation by the bootstrap is also possible, as Robins & Wang (1999) note. However, bootstrap variance estimation involves running the imputation procedure multiple times on each bootstrap sample, so there is definite potential for this linearisation approach to be faster. 
+
+## Notation
+
+There is quite a lot of notation, and it is not even close to the same as the notation of their related paper on correctly-specified models. 
+
+- $Y$: data
+- $R$: observation indicator
+- $\psi$: parameters in the imputation model
+- $\beta$: parameters in the analysis model
+- $\tau$: information matrix for $\beta$ 
+- $\bar U^{ij}$: score vector for $\beta$ at observation $i$, imputation $j$
+- $\bar U^i$: average of $\bar U^{ij}$ over imputations
+- $\Omega$: variance matrix of $\sum_i \bar U^i(\hat\psi,\hat\beta)$
+- $\Omega_c$: complete-data variance of $\bar U$
+- $S^{ij}_{\mathrm{mis}}$: score vector for $\psi$ in the imputed observations
+- $D^i$: influence function for $\psi$.
+- $\Lambda$: sandwich variance for $\hat\psi$ (outer product of $D$)
+- $\kappa$: covariance of $S^{ij}_{\mathrm{mis}}$ and $\bar U^{ij}$.
+
+
+If the imputation model is a joint model for $(Y,R)$ estimated by maximum likelihood, then $D^i$ and $S^{ij}$ are closely related. But if $\psi$ is not estimated by maximum likelihood then $D^i$ describes how it was estimated and $S^{ij}$ describes the density the imputations are taken from.
+
+The variance matrix of $\hat\beta$ has three components
+
+- $\Omega_c$: the complete-data variance
+- $\kappa\Lambda\kappa^T$: the contribution of uncertainty in $\psi$ (I think)
+- $n^{-1}\sum_i\left[ \kappa D^i(\bar U^i)^T+(\kappa D^i(\bar U^i)^T)^T \right]$, the contribution of uncertainty in $Y$ given $\hat\psi$ (I think)
+
+## Subsidiarity
+
+Robins & Wang were trying to preserve the separation of responsibilities between the imputer and the analyst, so they talk about which quantities could best be computed where.
+
+The imputer (the imputation software) is responsible for 
+
+- $Y$, $\hat\psi$ (obviously)
+- $S^{ij}_{\mathrm{mis}}$
+- $\Lambda$ (which should just be a by-product of estimating $\psi$)
+- $D^i$
+
+The analyst (the analytic software) is responsible for 
+
+- $\hat\beta$ (obviously)
+- $\tau$ (which will be a by-product of estimation)
+- $\bar U^{ij}$, $\bar U$
+- $\Omega_c$
+
+and for computing $\kappa$ and the components of the variance matrix
+
+
+## Post-processing and passive imputation
+
+Because $S^{ij}_{mis}$ is distinct from $D^{ij}$, there's no problem in principle with either passive imputation (eg, imputing BMI as weight/height${}^2$) or post-processing (eg, setting negative values to zero or rounding to an integer).  These affect $S$ but not $D$.
+
+
+## Simple examples
+
+
+### Case-control
+
+Try both parametric imputation (congenial to MLE) and something more flexible
+
+```{r}
+library(VGAM)
+
+# use VGAM::simulate
+## need to add @simslot for cumulative()
+
+impute<-function(y,x, ...){
+  R<-!is.na(x)
+  impmodel<-lm(x~y, subset=R)
+  Yhat<-rnorm(predict(impmodel, newdata=data.frame(y=y[!R])), summary(model)$sigma)
+  
+  Smiss<- 
+  D<-inflfun(impmodel)
+
+  
+}
+
+```
+
+
+### Multivariate Normal imputation
+
+Suppose the imputation model is $Y\sim N(\mu, \Xi)$ (traditionally popular)
+
+We have
+
+Multivariate normal imputation model, various analysis models
+
+Single missing binary variable (two-phase design)
+
+## MICE
+
+The current dominance of MICE is a pain. The approach is still valid, but it's harder to get the influence functions $D$ and the imputation density that goes into $S$ because the model isn't fitted all at once and $D$ and $S$ for earlier variables will depend on the *old* values of later variables, not the imputed values. 
+
+The motivation for a non-parametric variance estimator should be stronger for MICE (and any other semi-automated system), because the argument that the models *should* be correctly specified, compatible, and congenial becomes weaker the more automation there is -- and especially as the full-conditional specification of MICE need not even correspond to a proper joint distribution for $Y$, let alone $(Y, R)$.
+
+Options
+
+- one MICE workaround is for the actual imputations to be produced by doing a separate sampling round *without* updating
+- another is for each update to store the influence functions
+
+In both cases, need to take account of the extra posterior uncertainty: $Y$ is sampled from $f(Y;\hat\psi+\epsilon)$ for some random epsilon, so the density of $Y$ given $\hat\psi$ is the $Y$ density mixed over $\epsilon$.  We can do this exactly when $Y$ is Normal, otherwise maybe use a Laplace approximation to 
+$$f(Y;\hat\psi)=\int f_0(y;\hat\psi+t)\sigma^{-1}\phi(t/\sigma),dt$$
+
+`VGAM` will be useful: it has a `simulate` generic. If we need to draw from the posterior, then reweight and take one Fisher scoring step (reweight with $\mathrm{Exp}(1)$ -- the 'Bayesian bootstrap' -- since `vglm` doesn't like zeros)
+
+## Flexible predictive models
+
+The proofs are not valid for imputations by random forests or variational autoencoders or boosted trees, but it's possible that the conclusions are ok. There won't be a good analog for $D$ but there might be for $\kappa D$
+
+In the logistic case-control model, resampling imputation is congenial to IPW estimation.  Can we take $\hat\psi=\mathbb{F}_{X|y=0}(x)$? It's not parametric but it is nearly finite-dimensional and estimated at the parametric rate.
