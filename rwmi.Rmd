@@ -34,7 +34,7 @@ There is quite a lot of notation, and it is not even close to the same as the no
 - $\kappa$: covariance of $S^{ij}_{\mathrm{mis}}$ and $\bar U^{ij}$.
 
 
-If the imputation model is a joint model for $(Y,R)$ estimated by maximum likelihood, then $D^i$ and $S^{ij}$ are closely related. But if $\psi$ is not estimated by maximum likelihood then $D^i$ describes how it was estimated and $S^{ij}$ describes the density the imputations are taken from.
+If the imputation model is a joint model for $(Y,R)$ estimated by maximum likelihood, then $D^i$ and $S^{ij}$ are closely related. But if $\psi$ is not estimated by maximum likelihood then $D^i$ describes how it was estimated and $S^{ij}_{\mathrm{mis}}$ describes the density the imputations are taken from.
 
 The variance matrix of $\hat\beta$ has three components
 
